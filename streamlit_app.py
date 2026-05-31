@@ -137,7 +137,7 @@ with left:
     with col2:
         lng_in = st.number_input("Longitude", value=83.3975, format="%.6f", step=0.0001)
 
-    st.caption("💡 On phone: open Google Maps → long press your location → copy coordinates")
+    st.info("📱 **Easy way to get coordinates:** Open [Google Maps](https://maps.google.com) → search your location → right-click → first option shows lat,lng → copy here")
 
     if st.button("🔍 Check this location", use_container_width=True, type="primary"):
         st.session_state.cur_lat = lat_in
@@ -268,5 +268,9 @@ with right:
         else:
             st.warning("⚠️ Add 2+ safe places to train model")
         if os.path.exists(LOG_FILE):
-            df = pd.read_csv(LOG_FILE)
-            st.write(f"Total location checks: **{len(df)}**")
+            try:
+                df = pd.read_csv(LOG_FILE)
+                if len(df) > 0:
+                    st.write(f"Total location checks: **{len(df)}**")
+            except:
+                st.write("No checks logged yet.")
