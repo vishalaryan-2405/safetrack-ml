@@ -1,8 +1,0 @@
-streamlit
-pandas
-numpy
-scikit-learn
-folium
-streamlit-folium
-joblib
- 
