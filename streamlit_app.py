@@ -158,24 +158,29 @@ with left:
     st.subheader("📍 Check Location")
 
     # Search by place name
-    search_q=st.text_input("🔍 Search place name",placeholder="Railway Station Vizianagaram, Home...")
-    found_lat,found_lng=None,None
-    if search_q and len(search_q)>3:
-        import urllib.request,urllib.parse
-        url=f"https://nominatim.openstreetmap.org/search?q={urllib.parse.quote(search_q)}&format=json&limit=4&countrycodes=in"
-        try:
-            req=urllib.request.Request(url,headers={"User-Agent":"SafeTrack/1.0"})
-            with urllib.request.urlopen(req,timeout=5) as r:
-                results=json.loads(r.read())
-            if results:
-                names=[f"{i['display_name'].split(',')[0]} — {','.join(i['display_name'].split(',')[1:3])}" for i in results]
-                choice=st.selectbox("Select place",names)
-                idx=names.index(choice)
-                found_lat=float(results[idx]["lat"])
-                found_lng=float(results[idx]["lon"])
-                st.caption(f"📌 Coordinates: {found_lat:.5f}, {found_lng:.5f}")
-        except: st.caption("Search failed — enter coordinates manually below")
+    search_q = st.text_input("🔍 Search any place", placeholder="Araku Valley, Railway Station, College...")
+found_lat, found_lng = None, None
 
+if search_q and len(search_q) > 2:
+    import urllib.request, urllib.parse
+    API_KEY = "YOUR_GEOAPIFY_KEY_HERE"  # paste your key
+    url = f"https://api.geoapify.com/v1/geocode/search?text={urllib.parse.quote(search_q)}&filter=countrycode:in&limit=5&apiKey={API_KEY}"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "SafeTrack/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = json.loads(r.read())
+        features = data.get("features", [])
+        if features:
+            names = [f["properties"].get("formatted","Unknown") for f in features]
+            choice = st.selectbox("Select place", names)
+            idx = names.index(choice)
+            found_lat = features[idx]["geometry"]["coordinates"][1]
+            found_lng = features[idx]["geometry"]["coordinates"][0]
+            st.caption(f"📌 {found_lat:.5f}, {found_lng:.5f}")
+        else:
+            st.caption("No results found — try different spelling")
+    except Exception as e:
+        st.caption("Search unavailable — enter coordinates manually")
     st.caption("— or enter coordinates manually —")
     col1,col2=st.columns(2)
     with col1: lat_in=st.number_input("Latitude", value=found_lat if found_lat else 18.1103,format="%.6f",step=0.0001)
