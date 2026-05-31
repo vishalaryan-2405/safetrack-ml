@@ -1,0 +1,602 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SafeTrack</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono&display=swap');
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--safe:#00c47a;--warn:#f5a623;--danger:#f03e3e;--bg:#0d1117;--card:#161b22;--card2:#1c2333;--text:#e6edf3;--muted:#7d8590;--border:#21262d;--accent:#58a6ff;}
+body{font-family:'Space Grotesk',sans-serif;background:var(--bg);color:var(--text);height:100vh;overflow:hidden;display:flex;flex-direction:column}
+
+/* HEADER */
+header{display:flex;align-items:center;justify-content:space-between;padding:10px 16px;background:var(--card);border-bottom:1px solid var(--border);flex-shrink:0;z-index:100}
+.logo{font-size:16px;font-weight:700}.logo span{color:var(--accent)}
+.chips{display:flex;gap:6px}
+.chip{display:flex;align-items:center;gap:5px;padding:4px 10px;background:var(--card2);border:1px solid var(--border);border-radius:20px;font-size:11px;color:var(--muted)}
+.dot{width:5px;height:5px;border-radius:50%;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* ALERT — fixed below header, full width, never hidden */
+.alert{
+  position:fixed;top:45px;left:50%;
+  transform:translateX(-50%) translateY(-120px);
+  z-index:9999;padding:10px 20px;
+  border-radius:0 0 12px 12px;
+  font-size:13px;font-weight:500;
+  transition:transform .3s ease;
+  white-space:nowrap;border:1px solid;
+  border-top:none;max-width:500px;width:90%;text-align:center;
+}
+.alert.show{transform:translateX(-50%) translateY(0)}
+.a-safe{background:rgba(0,196,122,.18);color:var(--safe);border-color:rgba(0,196,122,.4)}
+.a-warn{background:rgba(245,166,35,.18);color:var(--warn);border-color:rgba(245,166,35,.4)}
+.a-danger{background:rgba(240,62,62,.2);color:var(--danger);border-color:rgba(240,62,62,.45)}
+.a-info{background:rgba(88,166,255,.15);color:var(--accent);border-color:rgba(88,166,255,.4)}
+
+/* LAYOUT with resizable sidebar */
+.layout{display:flex;flex:1;overflow:hidden;position:relative}
+.sidebar{width:300px;min-width:200px;max-width:500px;flex-shrink:0;background:var(--card);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;position:relative}
+.resizer{width:6px;background:transparent;cursor:col-resize;flex-shrink:0;position:relative;z-index:10;transition:background .15s}
+.resizer:hover,.resizer.dragging{background:var(--accent)}
+.resizer::after{content:'';position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:40px;background:var(--border);border-radius:1px}
+#map{flex:1;min-width:200px}
+
+/* SECTIONS */
+.sec{padding:12px 14px;border-bottom:1px solid var(--border)}
+.sec-label{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase;margin-bottom:8px}
+
+/* RISK */
+.risk-card{background:var(--card2);border-radius:10px;border:1px solid var(--border);padding:14px;text-align:center}
+.risk-num{font-size:48px;font-weight:700;font-family:'Space Mono',monospace;line-height:1;transition:color .4s}
+.risk-st{font-size:12px;font-weight:600;letter-spacing:.06em;margin-top:4px;text-transform:uppercase;transition:color .4s}
+.risk-bar{height:4px;background:var(--border);border-radius:2px;margin-top:12px;overflow:hidden}
+.risk-fill{height:100%;border-radius:2px;transition:width .6s,background .4s}
+.risk-exp{font-size:11px;color:var(--muted);margin-top:8px;text-align:left;line-height:1.6}
+
+/* DETAILS GRID */
+.ig{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.ic{background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:8px 10px}
+.ic-l{font-size:9px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:2px}
+.ic-v{font-size:14px;font-weight:500;font-family:'Space Mono',monospace}
+
+/* BUTTONS */
+.btn{width:100%;padding:10px 14px;border-radius:9px;border:none;cursor:pointer;font-family:'Space Grotesk',sans-serif;font-size:13px;font-weight:500;transition:all .18s;display:flex;align-items:center;justify-content:center;gap:7px;margin-bottom:7px}
+.btn:last-child{margin-bottom:0}
+.btn-primary{background:var(--accent);color:#0d1117}.btn-primary:hover{opacity:.85}
+.btn-safe{background:rgba(0,196,122,.15);color:var(--safe);border:1px solid rgba(0,196,122,.3)}
+.btn-ghost{background:var(--card2);color:var(--text);border:1px solid var(--border)}.btn-ghost:hover{background:var(--border)}
+.btn:disabled{opacity:.35;cursor:not-allowed}
+
+/* TOGGLE */
+.tr-row{display:flex;align-items:center;justify-content:space-between;background:var(--card2);border:1px solid var(--border);border-radius:9px;padding:10px 12px;margin-bottom:7px}
+.sw{position:relative;width:36px;height:19px;flex-shrink:0}
+.sw input{opacity:0;width:0;height:0;position:absolute}
+.sw-t{position:absolute;inset:0;background:var(--border);border-radius:10px;cursor:pointer;transition:.25s}
+.sw-t:before{content:'';position:absolute;width:13px;height:13px;left:3px;top:3px;background:#fff;border-radius:50%;transition:.25s}
+.sw input:checked~.sw-t{background:var(--accent)}
+.sw input:checked~.sw-t:before{transform:translateX(17px)}
+
+/* SEARCH */
+.search-wrap{position:relative;margin-bottom:7px}
+.si{width:100%;padding:9px 11px;background:var(--card2);border:1px solid var(--border);border-radius:9px;color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:13px;outline:none;transition:border-color .2s}
+.si:focus{border-color:var(--accent)}
+.si::placeholder{color:var(--muted)}
+.sr{position:absolute;top:calc(100% + 4px);left:0;right:0;background:var(--card);border:1px solid var(--border);border-radius:9px;z-index:500;max-height:200px;overflow-y:auto;display:none}
+.sr.open{display:block}
+.sri{padding:9px 11px;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)}
+.sri:last-child{border-bottom:none}
+.sri:hover{background:var(--card2)}
+.sri-n{font-weight:500;color:var(--text)}
+.sri-a{color:var(--muted);font-size:11px;margin-top:1px}
+.sr-load{padding:10px;text-align:center;color:var(--muted);font-size:12px}
+
+/* PLACES */
+.pi{display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--card2);border:1px solid var(--border);border-radius:9px;margin-bottom:5px;font-size:12px;cursor:pointer;transition:border-color .15s}
+.pi:hover{border-color:var(--accent)}
+.pd{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.pi-inf{flex:1;min-width:0}
+.pi-n{font-weight:500;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pi-c{font-family:'Space Mono',monospace;font-size:10px;color:var(--muted)}
+.pi-rm{font-size:16px;color:var(--muted);cursor:pointer;padding:0 3px;line-height:1}
+.pi-rm:hover{color:var(--danger)}
+
+/* CONTACTS — list with call button */
+.contact-add{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px}
+.contact-item{display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--card2);border:1px solid var(--border);border-radius:9px;margin-bottom:5px}
+.contact-item:last-child{margin-bottom:0}
+.ci-info{flex:1;min-width:0}
+.ci-name{font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ci-num{font-size:11px;color:var(--muted);font-family:'Space Mono',monospace}
+.ci-call{width:32px;height:32px;border-radius:50%;background:rgba(0,196,122,.15);border:1px solid rgba(0,196,122,.3);color:var(--safe);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;transition:background .15s}
+.ci-call:hover{background:rgba(0,196,122,.3)}
+.ci-del{width:28px;height:28px;border-radius:50%;background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.ci-del:hover{color:var(--danger)}
+
+/* CONTACTS ACCORDION */
+.acc-head{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:2px 0;margin-bottom:6px}
+.acc-title{font-size:10px;letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+.acc-arrow{font-size:12px;color:var(--muted);transition:transform .2s}
+.acc-arrow.open{transform:rotate(180deg)}
+.acc-body{display:none}.acc-body.open{display:block}
+
+/* SOS */
+.sos-btn{display:none;width:100%;padding:13px;border-radius:10px;border:2px solid var(--danger);background:rgba(240,62,62,.15);color:var(--danger);font-family:'Space Grotesk',sans-serif;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px;animation:sos-pulse 1.5s ease infinite}
+.sos-btn.visible{display:block}
+@keyframes sos-pulse{0%,100%{box-shadow:0 0 0 0 rgba(240,62,62,.4)}50%{box-shadow:0 0 0 8px rgba(240,62,62,0)}}
+
+/* ROUTE BANNER */
+.rb{display:none;margin-bottom:7px;padding:10px 12px;background:rgba(245,166,35,.08);border:1px solid rgba(245,166,35,.3);border-radius:9px;font-size:12px}
+.rb.show{display:block}
+
+/* HISTORY */
+.hi{display:flex;align-items:center;gap:7px;padding:6px 0;border-bottom:1px solid var(--border);font-size:11px}
+.hi:last-child{border-bottom:none}
+.hd{width:6px;height:6px;border-radius:50%;flex-shrink:0}
+.hm{flex:1;min-width:0}
+.hs{font-weight:500;font-size:11px}
+.hc{font-family:'Space Mono',monospace;color:var(--muted);font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:2000;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .2s;padding:20px}
+.modal-bg.open{opacity:1;pointer-events:all}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px;width:300px}
+.modal h3{font-size:14px;font-weight:600;margin-bottom:4px}
+.modal p{font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.5}
+.modal input{width:100%;padding:9px 11px;background:var(--card2);border:1px solid var(--border);border-radius:8px;color:var(--text);font-family:'Space Grotesk',sans-serif;font-size:13px;margin-bottom:7px;outline:none}
+.modal input:focus{border-color:var(--accent)}
+.modal-coords{font-size:10px;color:var(--muted);font-family:'Space Mono',monospace;margin-bottom:12px;padding:7px 9px;background:var(--card2);border-radius:6px}
+.modal-acts{display:flex;gap:7px}
+.modal-acts .btn{margin:0;flex:1;padding:9px}
+
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+.leaflet-popup-content-wrapper{background:var(--card);border:1px solid var(--border);color:var(--text);border-radius:9px;font-family:'Space Grotesk',sans-serif;font-size:12px}
+.leaflet-popup-tip{background:var(--card)}
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Safe<span>Track</span></div>
+  <div class="chips">
+    <div class="chip"><div class="dot" style="background:var(--accent)"></div><span id="city-name">Detecting...</span></div>
+    <div class="chip" id="model-chip" style="color:var(--warn)">0 zones</div>
+  </div>
+</header>
+
+<!-- ALERT — always visible below header -->
+<div class="alert" id="alert"></div>
+
+<div class="layout">
+
+  <!-- SIDEBAR -->
+  <div class="sidebar" id="sidebar">
+
+    <!-- RISK -->
+    <div class="sec">
+      <div class="sec-label">Safety score</div>
+      <button class="sos-btn" id="sos-btn" onclick="triggerSOS()">🆘 SOS — Call Emergency Contact</button>
+      <div class="risk-card">
+        <div class="risk-num" id="risk-num" style="color:var(--muted)">--</div>
+        <div style="font-size:10px;color:var(--muted)">out of 100</div>
+        <div class="risk-st" id="risk-st" style="color:var(--muted)">Not checked yet</div>
+        <div class="risk-bar"><div class="risk-fill" id="risk-fill" style="width:0%;background:var(--muted)"></div></div>
+        <div class="risk-exp" id="risk-exp">Press "Check my location" to begin.</div>
+      </div>
+    </div>
+
+    <!-- DETAILS -->
+    <div class="sec">
+      <div class="sec-label">Details</div>
+      <div class="ig">
+        <div class="ic"><div class="ic-l">Distance</div><div class="ic-v" id="d-dist" style="color:var(--muted)">--</div></div>
+        <div class="ic"><div class="ic-l">In cluster</div><div class="ic-v" id="d-clus" style="color:var(--muted)">--</div></div>
+        <div class="ic"><div class="ic-l">Coords</div><div class="ic-v" id="d-coords" style="font-size:9px;color:var(--muted)">--, --</div></div>
+        <div class="ic"><div class="ic-l">Time</div><div class="ic-v" id="d-time" style="font-size:11px;color:var(--muted)">--:--</div></div>
+      </div>
+    </div>
+
+    <!-- CONTROLS -->
+    <div class="sec">
+      <div class="sec-label">Controls</div>
+      <div class="tr-row">
+        <div><div style="font-size:12px;font-weight:500">Auto tracking</div><div style="font-size:10px;color:var(--muted)" id="tr-sub">Checks every 30 sec</div></div>
+        <label class="sw"><input type="checkbox" id="auto-tog" onchange="toggleAuto(this.checked)"><div class="sw-t"></div></label>
+      </div>
+      <button class="btn btn-primary" onclick="checkNow()" id="btn-chk">📍 Check my location now</button>
+      <button class="btn btn-safe"    onclick="openAddModal('current')">✅ I'm safe here — add this place</button>
+      <div class="rb" id="rb">
+        <div style="font-weight:500;color:var(--warn);margin-bottom:3px" id="rb-title">New route detected</div>
+        <div style="color:var(--muted)" id="rb-msg"></div>
+        <button class="btn btn-ghost" style="margin-top:7px;padding:7px;font-size:12px" onclick="addRoutePoint()">+ Add as safe route point</button>
+      </div>
+    </div>
+
+    <!-- SEARCH -->
+    <div class="sec">
+      <div class="sec-label">Search & add safe place</div>
+      <div class="search-wrap">
+        <input class="si" id="search-inp" placeholder="Search city, landmark, address..." oninput="searchPlace(this.value)" autocomplete="off"/>
+        <div class="sr" id="sr"></div>
+      </div>
+      <div style="font-size:10px;color:var(--muted)">Search any place → tap result → add as safe zone</div>
+    </div>
+
+    <!-- SAFE PLACES -->
+    <div class="sec">
+      <div class="acc-head" onclick="toggleAcc('places-body','places-arrow')">
+        <div class="acc-title">My safe places (<span id="place-count">0</span>)</div>
+        <span class="acc-arrow open" id="places-arrow">▼</span>
+      </div>
+      <div class="acc-body open" id="places-body">
+        <div id="places-list"><div style="font-size:11px;color:var(--muted);text-align:center;padding:8px 0">No safe places yet.</div></div>
+      </div>
+    </div>
+
+    <!-- EMERGENCY CONTACTS -->
+    <div class="sec">
+      <div class="acc-head" onclick="toggleAcc('contacts-body','contacts-arrow')">
+        <div class="acc-title">Emergency contacts (<span id="contact-count">0</span>)</div>
+        <span class="acc-arrow" id="contacts-arrow">▼</span>
+      </div>
+      <div class="acc-body" id="contacts-body">
+        <!-- Add new contact -->
+        <div class="contact-add">
+          <input class="si" id="sos-name" placeholder="Name"/>
+          <input class="si" id="sos-num"  placeholder="+91XXXXXXXXXX"/>
+        </div>
+        <button class="btn btn-ghost" onclick="saveContact()" style="padding:8px;font-size:12px;margin-bottom:10px">+ Save contact</button>
+        <!-- Saved contacts list -->
+        <div id="contacts-list"><div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0">No contacts saved yet.</div></div>
+      </div>
+    </div>
+
+    <!-- HISTORY -->
+    <div class="sec">
+      <div class="acc-head" onclick="toggleAcc('hist-body','hist-arrow')">
+        <div class="acc-title">Recent checks</div>
+        <span class="acc-arrow" id="hist-arrow">▼</span>
+      </div>
+      <div class="acc-body" id="hist-body">
+        <div id="hist-list"><div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0">No history yet</div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- RESIZER -->
+  <div class="resizer" id="resizer"></div>
+
+  <!-- MAP -->
+  <div id="map"></div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-bg" id="modal-bg" onclick="closeModalBg(event)">
+  <div class="modal">
+    <h3 id="modal-title">Add safe place</h3>
+    <p id="modal-desc">Name this location. It will be saved as a permanent safe cluster.</p>
+    <input type="text" id="modal-name" placeholder="e.g. Home, Office, Station..." maxlength="40"/>
+    <div class="modal-coords" id="modal-coords">--</div>
+    <div class="modal-acts">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-safe"  onclick="confirmAdd()">Add safe place</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── MAP SETUP ─────────────────────────────────────────
+const map = L.map('map').setView([18.1115,83.3963],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(map);
+let curLat=null,curLng=null,autoInt=null,pathCoords=[],pathLine=null;
+let safeCircles=[],youMarker=null,history=[],pendingLat=null,pendingLng=null,searchTimer=null;
+const youIcon=L.divIcon({className:'',html:`<div style="width:20px;height:20px;border-radius:50%;background:#58a6ff;border:3px solid #fff;box-shadow:0 0 0 6px rgba(88,166,255,.2)"></div>`,iconSize:[20,20],iconAnchor:[10,10]});
+
+// ── RESIZABLE SIDEBAR ─────────────────────────────────
+const resizer=document.getElementById('resizer');
+const sidebar=document.getElementById('sidebar');
+let isResizing=false;
+resizer.addEventListener('mousedown',e=>{isResizing=true;resizer.classList.add('dragging');document.body.style.cursor='col-resize';document.body.style.userSelect='none'});
+document.addEventListener('mousemove',e=>{
+  if(!isResizing)return;
+  const w=e.clientX;
+  if(w>200&&w<500){sidebar.style.width=w+'px';}
+});
+document.addEventListener('mouseup',()=>{isResizing=false;resizer.classList.remove('dragging');document.body.style.cursor='';document.body.style.userSelect=''});
+
+// ── ACCORDION ─────────────────────────────────────────
+function toggleAcc(bodyId,arrowId){
+  const b=document.getElementById(bodyId),a=document.getElementById(arrowId);
+  b.classList.toggle('open');a.classList.toggle('open');
+}
+
+// ── HAVERSINE ─────────────────────────────────────────
+function hvKm(a,b,c,d){const R=6371,dL=(c-a)*Math.PI/180,dG=(d-b)*Math.PI/180,x=Math.sin(dL/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dG/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
+
+// ── CHECK LOCATION ─────────────────────────────────────
+async function checkNow(){
+  if(!navigator.geolocation){showAlert('Geolocation not supported','a-warn');return}
+  document.getElementById('btn-chk').disabled=true;
+  document.getElementById('btn-chk').textContent='⏳ Getting location...';
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    curLat=pos.coords.latitude;curLng=pos.coords.longitude;
+    document.getElementById('d-time').textContent=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'});
+    document.getElementById('d-coords').textContent=curLat.toFixed(4)+','+curLng.toFixed(4);
+    try{
+      const r=await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({lat:curLat,lng:curLng})});
+      const d=await r.json();
+      updateUI(d);updateMap(curLat,curLng,d);addHist(d);reverseGeo(curLat,curLng);showRB(d);
+    }catch(e){const d=scoreLocal(curLat,curLng,new Date().getHours());updateUI(d);updateMap(curLat,curLng,d);addHist(d);}
+    document.getElementById('btn-chk').disabled=false;
+    document.getElementById('btn-chk').textContent='📍 Check my location now';
+  },()=>{showAlert('Allow location access in browser','a-warn');document.getElementById('btn-chk').disabled=false;document.getElementById('btn-chk').textContent='📍 Check my location now';},{enableHighAccuracy:true,timeout:10000});
+}
+
+function scoreLocal(lat,lng,hour){
+  const places=getPlaces();
+  if(!places.length)return{lat,lng,hour,risk_score:50,status:'MILD WARNING',dist_km:999,in_cluster:false,explain:'No safe places yet. Add places you visit.'};
+  let min=Infinity,near=null;
+  places.forEach(p=>{const d=hvKm(lat,lng,p.lat,p.lng);if(d<min){min=d;near=p;}});
+  const inc=min<0.4;
+  let risk,status,explain;
+  if(inc){risk=Math.max(5,min*100);status='SAFE';explain=`Near "${near.name}" (${Math.round(min*1000)}m). Known safe cluster.`;}
+  else if(min<1.5){risk=35+min*10;status='MILD WARNING';explain=`${min.toFixed(2)}km from "${near.name}". Travelling between zones.`;}
+  else{risk=Math.min(95,50+min*8);status='DANGER';explain=`${min.toFixed(2)}km from "${near.name}". Outside all known clusters!`;}
+  return{lat,lng,hour,risk_score:Math.round(risk),status,dist_km:min.toFixed(2),in_cluster:inc,explain};
+}
+
+function getPlaces(){try{return JSON.parse(localStorage.getItem('sp')||'[]')}catch{return[]}}
+
+// ── UPDATE UI ──────────────────────────────────────────
+function updateUI(d){
+  const risk=Math.round(d.risk_score||0),status=d.status||'UNKNOWN';
+  const color=status==='SAFE'?'var(--safe)':status==='MILD WARNING'?'var(--warn)':'var(--danger)';
+  document.getElementById('risk-num').textContent=risk;
+  document.getElementById('risk-num').style.color=color;
+  document.getElementById('risk-st').textContent=status;
+  document.getElementById('risk-st').style.color=color;
+  document.getElementById('risk-fill').style.width=risk+'%';
+  document.getElementById('risk-fill').style.background=color;
+  document.getElementById('d-dist').textContent=(d.dist_km||'--')+' km';
+  document.getElementById('d-dist').style.color=color;
+  document.getElementById('d-clus').textContent=d.in_cluster?'Yes ✓':'No ✗';
+  document.getElementById('d-clus').style.color=d.in_cluster?'var(--safe)':'var(--danger)';
+  if(d.explain)document.getElementById('risk-exp').textContent=d.explain;
+  const sos=document.getElementById('sos-btn');
+  if(status==='DANGER'){sos.classList.add('visible');if(navigator.vibrate)navigator.vibrate([300,100,300,100,300]);}
+  else sos.classList.remove('visible');
+  const cls=status==='SAFE'?'a-safe':status==='MILD WARNING'?'a-warn':'a-danger';
+  const msg=status==='SAFE'?'✓ You are in a safe area':status==='MILD WARNING'?'⚠ Between safe zones — stay aware':'🚨 Outside all known safe areas!';
+  showAlert(msg,cls);
+}
+
+function showRB(d){
+  const rb=document.getElementById('rb');
+  const dist=parseFloat(d.dist_km);
+  if(d.status==='MILD WARNING'&&dist>0.5&&dist<3){
+    rb.classList.add('show');
+    document.getElementById('rb-title').textContent=`New route — ${d.dist_km}km off known zones`;
+    document.getElementById('rb-msg').textContent='Not in your usual path. Add it if you use this route regularly.';
+  }else rb.classList.remove('show');
+}
+
+function addRoutePoint(){if(curLat)openAddModal('current','Route point');document.getElementById('rb').classList.remove('show');}
+
+// ── MAP ────────────────────────────────────────────────
+function updateMap(lat,lng,d){
+  map.setView([lat,lng],15);
+  if(youMarker)map.removeLayer(youMarker);
+  youMarker=L.marker([lat,lng],{icon:youIcon}).addTo(map).bindPopup(`<b>You are here</b><br>${d.status} · Risk: ${d.risk_score}/100`);
+  const c=d.status==='SAFE'?'#00c47a':d.status==='MILD WARNING'?'#f5a623':'#f03e3e';
+  L.circleMarker([lat,lng],{radius:60,color:c,fill:true,fillOpacity:.06,weight:1,dashArray:'6 4'}).addTo(map);
+  pathCoords.push([lat,lng]);
+  if(pathLine)map.removeLayer(pathLine);
+  if(pathCoords.length>1)pathLine=L.polyline(pathCoords,{color:'#58a6ff',weight:2,opacity:.4,dashArray:'4 4'}).addTo(map);
+}
+
+// ── AUTO TRACK ─────────────────────────────────────────
+function toggleAuto(on){
+  if(on){checkNow();autoInt=setInterval(checkNow,30000);document.getElementById('tr-sub').textContent='Active — checking every 30 sec';}
+  else{clearInterval(autoInt);document.getElementById('tr-sub').textContent='Checks every 30 sec';}
+}
+
+// ── SEARCH ─────────────────────────────────────────────
+function searchPlace(q){
+  clearTimeout(searchTimer);
+  const res=document.getElementById('sr');
+  if(q.length<3){res.classList.remove('open');return}
+  res.innerHTML='<div class="sr-load">Searching...</div>';res.classList.add('open');
+  searchTimer=setTimeout(async()=>{
+    try{
+      const r=await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=6&addressdetails=1&countrycodes=in&accept-language=en`);
+      const data=await r.json();
+      if(!data.length){res.innerHTML='<div class="sr-load">No results</div>';return}
+      res.innerHTML=data.map(item=>{
+        const name=item.display_name.split(',')[0];
+        const addr=item.display_name.split(',').slice(1,3).join(',').trim();
+        return`<div class="sri" onclick="selectPlace('${encodeURIComponent(item.display_name)}',${item.lat},${item.lon})"><div class="sri-n">${name}</div><div class="sri-a">${addr}</div></div>`;
+      }).join('');
+    }catch(e){res.innerHTML='<div class="sr-load">Search failed</div>';}
+  },500);
+}
+
+function selectPlace(nameEnc,lat,lng){
+  const name=decodeURIComponent(nameEnc).split(',')[0];
+  document.getElementById('sr').classList.remove('open');
+  document.getElementById('search-inp').value='';
+  map.flyTo([lat,lng],15,{duration:1.5});
+  pendingLat=parseFloat(lat);pendingLng=parseFloat(lng);
+  document.getElementById('modal-name').value=name.substring(0,40);
+  document.getElementById('modal-coords').textContent=`Lat: ${parseFloat(lat).toFixed(5)}  Lng: ${parseFloat(lng).toFixed(5)}`;
+  document.getElementById('modal-title').textContent='Add as safe place';
+  document.getElementById('modal-desc').textContent=`Add "${name}" as a known safe cluster.`;
+  document.getElementById('modal-bg').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-name').focus(),200);
+}
+
+// ── ADD PLACE ──────────────────────────────────────────
+function openAddModal(type,defaultName=''){
+  if(type==='current'&&!curLat){showAlert('Check location first','a-warn');return}
+  pendingLat=type==='current'?curLat:pendingLat;
+  pendingLng=type==='current'?curLng:pendingLng;
+  document.getElementById('modal-name').value=defaultName;
+  document.getElementById('modal-coords').textContent=`Lat: ${parseFloat(pendingLat).toFixed(5)}  Lng: ${parseFloat(pendingLng).toFixed(5)}`;
+  document.getElementById('modal-title').textContent='Add safe place';
+  document.getElementById('modal-desc').textContent='Name this location. Saved permanently as a safe cluster.';
+  document.getElementById('modal-bg').classList.add('open');
+  setTimeout(()=>document.getElementById('modal-name').focus(),200);
+}
+function closeModalBg(e){if(e.target.id==='modal-bg')closeModal()}
+function closeModal(){document.getElementById('modal-bg').classList.remove('open')}
+
+async function confirmAdd(){
+  const name=document.getElementById('modal-name').value.trim();
+  if(!name){document.getElementById('modal-name').focus();return}
+  try{
+    const r=await fetch('/api/places',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,lat:pendingLat,lng:pendingLng})});
+    const d=await r.json();
+    if(d.success){showAlert(`✅ "${name}" added`,'a-safe');loadPlaces();}
+  }catch(e){
+    const places=getPlaces();
+    places.push({id:Date.now(),name,lat:pendingLat,lng:pendingLng});
+    localStorage.setItem('sp',JSON.stringify(places));
+    loadPlaces();showAlert(`✅ "${name}" saved`,'a-safe');
+  }
+  closeModal();
+}
+
+// ── LOAD PLACES ────────────────────────────────────────
+async function loadPlaces(){
+  let places=[];
+  try{const r=await fetch('/api/places');places=await r.json();localStorage.setItem('sp',JSON.stringify(places));}
+  catch(e){places=getPlaces();}
+  const el=document.getElementById('places-list');
+  document.getElementById('place-count').textContent=places.length;
+  document.getElementById('model-chip').textContent=places.length+' zones';
+  document.getElementById('model-chip').style.color=places.length>0?'var(--safe)':'var(--warn)';
+  if(!places.length){el.innerHTML='<div style="font-size:11px;color:var(--muted);text-align:center;padding:8px 0">No safe places yet.</div>';drawCircles([]);return}
+  el.innerHTML=places.map(p=>`
+    <div class="pi" onclick="map.flyTo([${p.lat},${p.lng}],15)">
+      <div class="pd" style="background:var(--safe)"></div>
+      <div class="pi-inf"><div class="pi-n">${p.name}</div><div class="pi-c">${parseFloat(p.lat).toFixed(4)}, ${parseFloat(p.lng).toFixed(4)}</div></div>
+      <span class="pi-rm" onclick="removePlace(event,${p.id})">×</span>
+    </div>`).join('');
+  drawCircles(places);
+}
+
+async function removePlace(e,id){
+  e.stopPropagation();
+  try{await fetch('/api/places/'+id,{method:'DELETE'})}catch(ex){}
+  const places=getPlaces().filter(p=>p.id!==id);
+  localStorage.setItem('sp',JSON.stringify(places));loadPlaces();
+}
+
+function drawCircles(places){
+  safeCircles.forEach(c=>map.removeLayer(c));safeCircles=[];
+  places.forEach(p=>{
+    const c1=L.circle([p.lat,p.lng],{radius:400,color:'#00c47a',fill:true,fillOpacity:.08,weight:1.5,dashArray:'5 4'}).addTo(map);
+    const c2=L.circleMarker([p.lat,p.lng],{radius:6,color:'#00c47a',fill:true,fillOpacity:.9,weight:2}).bindTooltip(p.name,{direction:'top'}).addTo(map);
+    safeCircles.push(c1,c2);
+  });
+}
+
+// ── CONTACTS ───────────────────────────────────────────
+function getContacts(){try{return JSON.parse(localStorage.getItem('contacts')||'[]')}catch{return[]}}
+
+function saveContact(){
+  const name=document.getElementById('sos-name').value.trim();
+  const num=document.getElementById('sos-num').value.trim();
+  if(!name||!num){showAlert('Enter name and number','a-warn');return}
+  const contacts=getContacts();
+  contacts.push({id:Date.now(),name,num});
+  localStorage.setItem('contacts',JSON.stringify(contacts));
+  document.getElementById('sos-name').value='';
+  document.getElementById('sos-num').value='';
+  renderContacts();
+  showAlert(`✅ ${name} saved as emergency contact`,'a-safe');
+  // open accordion
+  const body=document.getElementById('contacts-body');
+  if(!body.classList.contains('open')){toggleAcc('contacts-body','contacts-arrow');}
+}
+
+function renderContacts(){
+  const contacts=getContacts();
+  const el=document.getElementById('contacts-list');
+  document.getElementById('contact-count').textContent=contacts.length;
+  if(!contacts.length){el.innerHTML='<div style="font-size:11px;color:var(--muted);text-align:center;padding:6px 0">No contacts saved yet.</div>';return}
+  el.innerHTML=contacts.map(c=>`
+    <div class="contact-item">
+      <div class="ci-info">
+        <div class="ci-name">${c.name}</div>
+        <div class="ci-num">${c.num}</div>
+      </div>
+      <button class="ci-call" onclick="callContact('${c.num}')" title="Call ${c.name}">📞</button>
+      <button class="ci-del"  onclick="deleteContact(${c.id})" title="Remove">×</button>
+    </div>`).join('');
+}
+
+function callContact(num){
+  const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
+  if(isMobile){window.location.href='tel:'+num;}
+  else{
+    showAlert(`📞 On phone this calls ${num} directly`,'a-info');
+    window.location.href='tel:'+num;
+  }
+}
+
+function deleteContact(id){
+  const contacts=getContacts().filter(c=>c.id!==id);
+  localStorage.setItem('contacts',JSON.stringify(contacts));
+  renderContacts();
+}
+
+function triggerSOS(){
+  const contacts=getContacts();
+  if(!contacts.length){showAlert('No emergency contact saved! Add one below.','a-warn');toggleAcc('contacts-body','contacts-arrow');return}
+  const first=contacts[0];
+  const isMobile=/Android|iPhone|iPad/i.test(navigator.userAgent);
+  if(isMobile){window.location.href='tel:'+first.num;}
+  else{
+    if(confirm(`🆘 SOS ALERT!\nCall: ${first.name}\nNumber: ${first.num}\n\n(On phone this dials automatically)`)){
+      window.location.href='tel:'+first.num;
+    }
+  }
+}
+
+// ── HISTORY ────────────────────────────────────────────
+function addHist(d){
+  history.unshift({status:d.status,lat:d.lat,lng:d.lng,risk:d.risk_score,time:new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})});
+  if(history.length>20)history.pop();
+  const el=document.getElementById('hist-list');
+  const c=h=>h.status==='SAFE'?'var(--safe)':h.status==='MILD WARNING'?'var(--warn)':'var(--danger)';
+  el.innerHTML=history.slice(0,8).map(h=>`
+    <div class="hi">
+      <div class="hd" style="background:${c(h)}"></div>
+      <div class="hm"><div class="hs" style="color:${c(h)}">${h.status} · ${Math.round(h.risk)}/100</div><div class="hc">${parseFloat(h.lat).toFixed(4)}, ${parseFloat(h.lng).toFixed(4)}</div></div>
+      <div style="font-size:10px;color:var(--muted)">${h.time}</div>
+    </div>`).join('');
+}
+
+// ── ALERT ──────────────────────────────────────────────
+function showAlert(msg,cls){
+  const el=document.getElementById('alert');
+  el.className='alert '+cls;el.textContent=msg;el.classList.add('show');
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove('show'),4000);
+}
+
+// ── REVERSE GEO ────────────────────────────────────────
+async function reverseGeo(lat,lng){
+  try{const r=await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`);const d=await r.json();const city=d.address?.city||d.address?.town||d.address?.village||'Unknown';document.getElementById('city-name').textContent=city;}catch(e){}
+}
+
+// ── INIT ───────────────────────────────────────────────
+loadPlaces();
+renderContacts();
+</script>
+</body>
+</html>
